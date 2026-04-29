@@ -1,6 +1,6 @@
-pyrogram
-google-genai
-python-dotenv
-aiosqlite
-apscheduler
-tgcrypto
+pyrogram==2.0.106
+tgcrypto==1.2.5
+google-genai==1.16.0
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+apscheduler==3.10.4
