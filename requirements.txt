@@ -1,0 +1,6 @@
+pyrogram
+google-genai
+python-dotenv
+aiosqlite
+apscheduler
+tgcrypto
