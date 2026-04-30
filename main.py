@@ -184,7 +184,10 @@ async def handle_user_message(client, message: Message):
 
 @bot_app.on_message(filters.command("start"))
 async def bot_start(client, message: Message):
-    if message.from_user.id != ADMIN_ID: return
+    logging.info(f"Start buyrug'i keldi. Foydalanuvchi ID: {message.from_user.id}, Kutilayotgan Admin ID: {ADMIN_ID}")
+    if message.from_user.id != ADMIN_ID:
+        await message.reply(f"Siz admin emassiz. Sizning ID: {message.from_user.id}")
+        return
     await message.reply("Xush kelibsiz Xojayin! Men sizning yordamchingizman.")
 
 @bot_app.on_message(filters.command("auto_on"))
@@ -203,7 +206,7 @@ async def auto_off(client, message: Message):
 async def main():
     try:
         await create_tables()
-        logging.info("Database tayyor!")
+        logging.info(f"Database tayyor! Aktiv ADMIN_ID: {ADMIN_ID}")
         
         if BOT_TOKEN:
             await bot_app.start()
@@ -220,11 +223,16 @@ async def main():
                 logging.error("Terminal mavjud emas, login qilib bo'lmaydi. To'xtatildi.")
                 return
 
-        await user_app.start()
-        me = await user_app.get_me()
-        global MY_ID
-        MY_ID = me.id
-        logging.info(f"Akkauntga ulandi: {me.first_name} (ID: {me.id})")
+        try:
+            await user_app.start()
+            me = await user_app.get_me()
+            global MY_ID
+            MY_ID = me.id
+            logging.info(f"Akkauntga ulandi: {me.first_name} (ID: {me.id})")
+        except Exception as e:
+            logging.error(f"Userbot ulanishida xatolik: {e}")
+            if BOT_TOKEN:
+                await bot_app.send_message(ADMIN_ID, f"❌ **Userbot ulanmadi!**\nSessiya muddati o'tgan yoki xato. Iltimos, yangi `SESSION_STRING` oling.\nXatolik: `{e}`")
         
         start_scheduler()
         logging.info("🚀 Hammasi tayyor!")
