@@ -156,90 +156,87 @@ def start_scheduler():
     scheduler.start()
 
 # --- 6. HANDLERLAR (USERBOT & BOT) ---
+
+# Diagnostika uchun: har qanday xabarni logga yozish
+@user_app.on_message(filters.all)
+async def debug_log(client, message: Message):
+    sender = message.from_user.id if message.from_user else "Noma'lum"
+    logging.info(f"DEBUG: Userbotga xabar keldi! Kimdan: {sender}, Matn: {message.text[:20] if message.text else '[Media]'}")
+    message.continue_propagation()
+
 @user_app.on_message(filters.private & ~filters.me)
 async def handle_user_message(client, message: Message):
     try:
-        if message.from_user.id == ADMIN_ID: return
+        user_id = message.from_user.id
+        if user_id == ADMIN_ID:
+            logging.info("Admin o'zi yozdi, AI javob bermaydi.")
+            return
+            
+        logging.info(f"Mijoz {user_id} ga javob tayyorlanmoqda...")
         auto_reply = await get_setting("auto_reply")
         if auto_reply == "0": return
         
-        await add_user(message.from_user.id, message.from_user.full_name, message.from_user.username)
-        history = await get_history(message.from_user.id)
+        await add_user(user_id, message.from_user.full_name, message.from_user.username)
+        history = await get_history(user_id)
         
-        reply_text = generate_client_reply(history, message.text or "[Media]", message.from_user.first_name)
+        # AI javobini kutish (taymer bilan)
+        try:
+            reply_text = generate_client_reply(history, message.text or "[Media]", message.from_user.first_name)
+        except Exception as ai_err:
+            logging.error(f"AI Xatosi: {ai_err}")
+            reply_text = "Tez orada javob beraman."
+
         sent_msg = await message.reply(reply_text)
         ai_sent_message_ids.add(sent_msg.id)
         
-        await add_message_to_history(message.from_user.id, "user", message.text or "[Media]")
-        await add_message_to_history(message.from_user.id, "assistant", reply_text)
+        await add_message_to_history(user_id, "user", message.text or "[Media]")
+        await add_message_to_history(user_id, "assistant", reply_text)
         
+        # Analiz va Adminga xabar
         analysis = analyze_chat(history, message.text or "[Media]")
-        if analysis.get("needs_summary"):
-            await bot_app.send_message(ADMIN_ID, f"📩 **Mijozdan xabar:**\n👤 {message.from_user.full_name}\n📝 Xulosa: {analysis['summary_text']}\n\nUnga javob yuborish uchun ustiga bosing.")
+        if analysis.get("needs_summary") and BOT_TOKEN:
+            await bot_app.send_message(ADMIN_ID, f"📩 **Mijozdan xabar:**\n👤 {message.from_user.full_name}\n📝 Xulosa: {analysis['summary_text']}")
+        
         if analysis.get("has_reminder"):
-            await add_reminder(message.from_user.id, analysis["reminder_text"], analysis["reminder_time"])
-            await bot_app.send_message(ADMIN_ID, f"📅 **Yangi reja!**\n👤 {message.from_user.full_name}\n📝 {analysis['reminder_text']}\n⏰ Vaqt: {analysis['reminder_time']}")
+            await add_reminder(user_id, analysis["reminder_text"], analysis["reminder_time"])
+            if BOT_TOKEN:
+                await bot_app.send_message(ADMIN_ID, f"📅 **Yangi reja!**\n👤 {message.from_user.full_name}\n📝 {analysis['reminder_text']}\n⏰ Vaqt: {analysis['reminder_time']}")
+                
     except Exception as e:
-        logging.error(f"User message handlerda xatolik: {e}")
+        logging.error(f"Handler xatosi: {e}")
 
 @bot_app.on_message(filters.command("start"))
 async def bot_start(client, message: Message):
-    logging.info(f"Start buyrug'i keldi. Foydalanuvchi ID: {message.from_user.id}, Kutilayotgan Admin ID: {ADMIN_ID}")
+    logging.info(f"Start buyrug'i keldi. ID: {message.from_user.id}")
     if message.from_user.id != ADMIN_ID:
         await message.reply(f"Siz admin emassiz. Sizning ID: {message.from_user.id}")
         return
     await message.reply("Xush kelibsiz Xojayin! Men sizning yordamchingizman.")
 
-@bot_app.on_message(filters.command("auto_on"))
-async def auto_on(client, message: Message):
-    if message.from_user.id != ADMIN_ID: return
-    await update_setting("auto_reply", "1")
-    await message.reply("✅ AI Avto-javob yoqildi.")
-
-@bot_app.on_message(filters.command("auto_off"))
-async def auto_off(client, message: Message):
-    if message.from_user.id != ADMIN_ID: return
-    await update_setting("auto_reply", "0")
-    await message.reply("❌ AI Avto-javob o'chirildi.")
-
 # --- 7. ASOSIY ISHGA TUSHIRISH ---
 async def main():
     try:
+        logging.info("=== TIZIM ISHGA TUSHMOQDA ===")
         await create_tables()
-        logging.info(f"Database tayyor! Aktiv ADMIN_ID: {ADMIN_ID}")
         
-        if BOT_TOKEN:
-            await bot_app.start()
-            bot_me = await bot_app.get_me()
-            logging.info(f"Boshqaruv boti ishga tushdi: @{bot_me.username}")
-            try:
-                await bot_app.send_message(ADMIN_ID, "🚀 Tizim ishga tushdi!")
-            except Exception as e:
-                logging.error(f"Admin-ga start xabari yuborib bo'lmadi: {e}")
+        # Klientlarni ro'yxatga olish
+        clients = [bot_app] if BOT_TOKEN else []
+        clients.append(user_app)
         
-        if not SESSION_STRING:
-            logging.error("❌ XATOLIK: SESSION_STRING kiritilmagan! Railway'da userbot ulanib bo'lmaydi.")
-            if not sys.stdin.isatty(): # Agar terminal bo'lmasa
-                logging.error("Terminal mavjud emas, login qilib bo'lmaydi. To'xtatildi.")
-                return
-
-        try:
-            await user_app.start()
-            me = await user_app.get_me()
-            global MY_ID
-            MY_ID = me.id
-            logging.info(f"Akkauntga ulandi: {me.first_name} (ID: {me.id})")
-        except Exception as e:
-            logging.error(f"Userbot ulanishida xatolik: {e}")
-            if BOT_TOKEN:
-                await bot_app.send_message(ADMIN_ID, f"❌ **Userbot ulanmadi!**\nSessiya muddati o'tgan yoki xato. Iltimos, yangi `SESSION_STRING` oling.\nXatolik: `{e}`")
-        
-        start_scheduler()
-        logging.info("🚀 Hammasi tayyor!")
-        await idle()
+        # Hammasini birga ishga tushirish
+        logging.info("Botlar ulanmoqda...")
+        await compose(clients)
         
     except Exception as e:
-        logging.error(f"Asosiy jarayonda xatolik: {e}")
+        logging.error(f"MAIN xatosi: {e}")
+
+if __name__ == "__main__":
+    # Scheduler alohida ishga tushishi kerak
+    start_scheduler()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
     finally:
         if user_app.is_connected: await user_app.stop()
         if bot_app.is_connected: await bot_app.stop()
