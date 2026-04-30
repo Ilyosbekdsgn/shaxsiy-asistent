@@ -4,5 +4,3 @@
 *.session-journal
 __pycache__/
 *.pyc
-*.pyo
-.DS_Store
