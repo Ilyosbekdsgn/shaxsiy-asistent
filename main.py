@@ -229,22 +229,15 @@ async def main():
         
     except Exception as e:
         logging.error(f"MAIN xatosi: {e}")
-
-if __name__ == "__main__":
-    # Scheduler alohida ishga tushishi kerak
-    start_scheduler()
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
     finally:
         if user_app.is_connected: await user_app.stop()
         if bot_app.is_connected: await bot_app.stop()
 
 if __name__ == "__main__":
+    start_scheduler()
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         logging.info("Bot to'xtatildi.")
     except Exception as e:
         logging.critical(f"Kutilmagan xatolik: {e}")
